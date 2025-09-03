@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skewcamera"
+version = "0.1.0"
+description = "Camera-based XY skew calibration for Klipper"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "COPYING" }
+authors = [{ name = "Marius Wachtler", email = "undingen@gmail.com" }]
+keywords = ["klipper", "3d-printing", "calibration", "aruco", "charuco", "opencv"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Scientific/Engineering :: Image Recognition",
+]
+dependencies = [
+  "numpy>=1.22",
+  "requests>=2.28",
+  # CharucoDetector is available in newer OpenCV contrib builds
+  "opencv-contrib-python>=4.7",
+]
+
+[project.scripts]
+skew-camera = "skew_correction:main"
+
+[project.optional-dependencies]
+# Most users won't generate the PDF. Install extras only if needed:
+#   pip install .[pdf]
+pdf = [
+  "Pillow>=9.0",
+  "img2pdf>=0.4",
+  "pikepdf>=9.0",
+]
+
+[tool.setuptools]
+# We ship a single top-level module file
+py-modules = ["skew_correction"]
