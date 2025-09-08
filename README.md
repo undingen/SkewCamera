@@ -18,6 +18,7 @@ Early version. Verify results and keep hands clear while the printer moves. Use 
 - Works with Moonraker and HTTP/MJPEG cameras (e.g. crowsnest)
 - Stores camera intrinsics to K.npy and dist.npy for reuse
 - Prints ready-to-use Klipper command: SET_SKEW XY=...
+- Reports observed axis travel for a commanded 100 mm move and if a significant scale error is detected, prints suggested rotation_distance correction factors for X/Y
 
 ## 🧠 How it works
 
@@ -25,6 +26,7 @@ Early version. Verify results and keep hands clear while the printer moves. Use 
 2) Guided capture: The tool moves the toolhead and captures images at multiple XY offsets and Z heights to diversify perspective for robust calibration.
 3) Intrinsics: OpenCV (CharucoDetector) detects corners across images and calibrates the camera, saving K.npy and dist.npy.
 4) Skew solve: With the calibrated camera, the tool collects poses across the bed, estimates the camera–nozzle offset and an affine map from commanded XY to observed board XY, then emits SET_SKEW parameters for Klipper.
+  Additionally, it reports observed axis travel for a 100 mm and when the error is significant, prints rotation_distance correction hints for X and Y.
 
 ## 📦 Requirements
 
@@ -82,6 +84,11 @@ skew_correction.py skew --z 40
 ```
 
 Defaults can be overridden with flags or env vars (see below).
+
+When skew completes, the tool also:
+- Reports the observed travel for a 100 mm command along X and Y (assuming the board is printed at 100% scale)
+- If the axis scale error is significant, prints a hint with suggested correction factors:
+  - Klipper: new rotation_distance = old rotation_distance × factor (per-axis)
 
 Note on one-time vs recurring steps:
 - Steps 2–3 (intrinsics capture and calibration) are one-time per camera configuration.

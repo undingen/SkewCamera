@@ -689,6 +689,30 @@ class SkewCalibrator:
         if abs(dev_pct) > 2.0:
             print("[warn] Printed board scale seems off by >2%. Reprint at 100% scale.")
 
+        # Report effective axis travel for a commanded 100 mm move, assuming
+        # the printed board is at 100% scale. A's columns give board-mm per
+        # printer-mm along X and Y respectively.
+        meas_100_x = 100.0 * alpha_x
+        meas_100_y = 100.0 * alpha_y
+        err_x_pct = 100.0 * (meas_100_x / 100.0 - 1.0)
+        err_y_pct = 100.0 * (meas_100_y / 100.0 - 1.0)
+
+        print("\n[travel] Commanded 100.0 mm -> observed travel (assuming board 100% scale):")
+        print(f"  X ≈ {meas_100_x:.2f} mm ({err_x_pct:+.2f}%)")
+        print(f"  Y ≈ {meas_100_y:.2f} mm ({err_y_pct:+.2f}%)")
+        print()
+
+        # Provide gentle guidance for calibration
+        if any(abs(v) > 0.5 for v in (err_x_pct, err_y_pct)):
+            # rotation_distance (Klipper): new = old × (measured/expected)
+            rd_corr_x = alpha_x if not np.isclose(alpha_x, 0.0) else float('nan')
+            rd_corr_y = alpha_y if not np.isclose(alpha_y, 0.0) else float('nan')
+            print("[warn] Significant axis scale error detected (>0.5%).")
+            print("  Please consider updating your printer's axis rotation_distance.")
+            print("[hint] Axis scale correction factors:")
+            print(f"  Klipper rotation_distance:  X *{rd_corr_x:.3f},  Y *{rd_corr_y:.3f}")
+            print()
+
         # Calculate Klipper skew parameters
         (xmin, ymin), (xmax, ymax) = self.moonraker.get_bed_size(margin=margin)
         pA = np.array([[xmin], [ymin]])
