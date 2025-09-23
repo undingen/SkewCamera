@@ -33,7 +33,7 @@ Early version. Verify results and keep hands clear while the printer moves. Use 
 - Python 3.8+ (Linux recommended)
 - Klipper + Moonraker reachable from your host
 - A camera reachable via HTTP snapshot/MJPEG (typical crowsnest URL) or a local index supported by OpenCV
-- OpenCV contrib build (aruco/charuco): opencv-contrib-python>=4.7
+- OpenCV: opencv-python>=4.10
 
 Optional (for PDF generation only): Pillow, img2pdf, pikepdf
 
@@ -56,6 +56,21 @@ Optional (regenerate PDFs yourself — requires extras):
 
 ```bash
 skew_correction.py generate-board
+```
+
+Experimental: Bambu Lab Vision Encoder board
+
+- You can also try using the original Bambu Lab Vision Encoder board (untested).
+- It uses a custom 7x7 ArUco dictionary and has small 2.5 mm fields on a 132×128 grid.
+- This may require a higher-resolution camera and/or the ability to focus very close.
+- Usage:
+
+```bash
+# One-time intrinsics (experimental mode):
+skew_correction.py calibrate-camera "camera_calibration_imgs/*.jpg" --vision-encoder
+
+# Run skew (experimental mode):
+skew_correction.py skew --z 40 --vision-encoder
 ```
 
 2) Capture images for camera intrinsics (one-time setup)
@@ -96,7 +111,7 @@ Note on one-time vs recurring steps:
 
 ## 🔧 Command reference
 
-- Regenerate board PDFs (A4, Letter):
+- Regenerate board PDFs (A4, Letter) alteratively use Bambu Vision Encoder board (experimental):
   - `skew_correction.py generate-board`
   - Note: Not required for normal use; the repository already includes `charuco_A4_5mm.pdf` and `charuco_Letter_5mm.pdf` for printing.
 
@@ -105,9 +120,11 @@ Note on one-time vs recurring steps:
 
 - Calibrate camera intrinsics from images:
   - `skew_correction.py calibrate-camera "camera_calibration_imgs/*.jpg"`
+  - Add `--vision-encoder` to use the experimental Bambu board.
 
 - Skew calibration (prints SET_SKEW command):
   - `skew_correction.py skew [--camera-id URL] [--z 40.0] [--margin 25.0] [--moonraker-url URL]`
+  - Add `--vision-encoder` to use the experimental Bambu board.
 
 Environment variables (defaults):
 - `PRINTER_URL` = `http://klipper.local`
