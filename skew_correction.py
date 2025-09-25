@@ -76,7 +76,7 @@ Dependencies:
   - Optional for PDF generation: Pillow, img2pdf, pikepdf
 
 Install with:
-  pip install opencv-contrib-python numpy requests 
+  pip install opencv-python numpy requests
   Optional: pip install Pillow img2pdf pikepdf
 
 
@@ -213,32 +213,76 @@ class Camera:
             frame = self._capture_frame(rotate=True)
             if frame is not None:
                 return frame
-            
+
         print(f"  [error] Failed to capture frame from camera '{self.camera_id}'")
         return None
 
 
 class CharucoBoard:
-    """Defines and builds the ChArUco board."""
+    """Defines and builds the ChArUco board.
 
-    def __init__(self):
-        self.square_mm = SQUARE_MM
-        self.squares_x = SQUARES_X
-        self.squares_y = SQUARES_Y
-        self.marker_ratio = MARKER_RATIO
-        self.dict_id = DICT_ID
+    Supports a custom ArUco dictionary loaded from an NPZ file and a preset for
+    the Bambu Lab Vision Encoder board (experimental).
+    """
+
+    def __init__(
+        self,
+        squares_x: int = SQUARES_X,
+        squares_y: int = SQUARES_Y,
+        square_mm: float = SQUARE_MM,
+        marker_ratio: float = MARKER_RATIO,
+        dict_id: Optional[object] = DICT_ID,  # int for predefined, str path to .npz for VE
+    ):
+        # If dict_id is a path to an NPZ, assume Vision Encoder mode with VE geometry
+        self._npz_path: Optional[str] = None
+        if isinstance(dict_id, str) and dict_id.lower().endswith(".npz"):
+            self._npz_path = dict_id
+            print("[info] Experimental Vision Encoder mode enabled (Bambu Lab).")
+            print("[info] Using 132x128 grid with 2.5 mm squares and custom 7x7 dictionary.")
+            squares_x, squares_y = 132, 128
+            square_mm = 2.5
+            dict_id = None  # not using predefined OpenCV dict
+
+        self.square_mm = float(square_mm)
+        self.squares_x = int(squares_x)
+        self.squares_y = int(squares_y)
+        self.marker_ratio = float(marker_ratio)
+        self.dict_id = dict_id
+
         print(f"[info] Using {self.square_mm} mm squares for ChArUco board.")
         self.board = self._build()
 
     def _build(self) -> cv.aruco.CharucoBoard:
         """Create the CharucoBoard object."""
-        dictionary = cv.aruco.getPredefinedDictionary(self.dict_id)
+        dictionary = self._load_dictionary()
         return cv.aruco.CharucoBoard(
             (self.squares_x, self.squares_y),
             float(self.square_mm),
             float(self.square_mm * self.marker_ratio),
             dictionary,
         )
+
+    def _load_dictionary(self) -> cv.aruco.Dictionary:
+        """Load an ArUco dictionary from NPZ or use a predefined one."""
+        if self._npz_path:
+            if not os.path.exists(self._npz_path):
+                raise FileNotFoundError(
+                    f"Custom dictionary NPZ not found: {self._npz_path}. "
+                    "Place ve_7x7_dict.npz in the project directory or provide a valid path."
+                )
+            data = np.load(self._npz_path, allow_pickle=False)
+            d = cv.aruco.Dictionary()
+            d.bytesList = data["bytesList"]
+            d.markerSize = int(data["markerSize"])  # expected 7 for 7x7
+            d.maxCorrectionBits = int(data["maxCorrectionBits"])  # e.g., 5
+            return d
+        # Fallback to predefined dictionary
+        if self.dict_id is None:
+            # Sensible default if nothing provided
+            dict_id = cv.aruco.DICT_5X5_1000
+        else:
+            dict_id = self.dict_id
+        return cv.aruco.getPredefinedDictionary(dict_id)
 
     def generate_image(self, dpi: int = 300) -> np.ndarray:
         """Generate the board image at a specified DPI."""
@@ -589,9 +633,24 @@ class SkewCalibrator:
         if ch_ids is None or len(ch_ids) < REQUIRED_CORNERS:
             return None
 
-        ok, rvec, tvec = cv.aruco.estimatePoseCharucoBoard(
-            ch_corners, ch_ids, self.charuco_board.board, K, dist, None, None
-        )
+        if hasattr(cv.aruco, "estimatePoseCharucoBoard"):
+            ok, rvec, tvec = cv.aruco.estimatePoseCharucoBoard(
+                ch_corners, ch_ids, self.charuco_board.board, K, dist, None, None
+            )
+        else:
+            # newer OpenCV versions deprecate estimatePoseCharucoBoard
+            corner_ids = ch_ids.flatten()
+            obj_pts_all = self.charuco_board.board.getChessboardCorners()
+            obj_pts = obj_pts_all[corner_ids]
+            img_pts = ch_corners.reshape(-1, 2)
+
+            if len(obj_pts) < 4:
+                return None
+
+            obj_pts = np.ascontiguousarray(obj_pts, dtype=np.float32)
+            img_pts = np.ascontiguousarray(img_pts, dtype=np.float32)
+
+            ok, rvec, tvec = cv.solvePnP(obj_pts, img_pts, K, dist, flags=cv.SOLVEPNP_ITERATIVE)
         if not ok:
             return None
 
@@ -799,7 +858,10 @@ def do_capture(args):
 
 def do_calibrate_camera(args):
     """Action for 'calibrate-camera' command."""
-    board = CharucoBoard()
+    if getattr(args, "vision_encoder", False):
+        board = CharucoBoard(dict_id="ve_7x7_dict.npz")
+    else:
+        board = CharucoBoard()
     calibrator = IntrinsicsCalibrator(board)
     calibrator.calibrate_from_images(args.images_glob)
 
@@ -808,7 +870,10 @@ def do_skew(args):
     """Action for 'skew' command."""
     camera = Camera(args.camera_id)
     moonraker = MoonrakerController(args.moonraker_url)
-    board = CharucoBoard()
+    if getattr(args, "vision_encoder", False):
+        board = CharucoBoard(dict_id="ve_7x7_dict.npz")
+    else:
+        board = CharucoBoard()
     calibrator = SkewCalibrator(camera, moonraker, board)
     calibrator.run_skew_calibration(args.z, args.margin)
 
@@ -859,6 +924,11 @@ def main():
         help="Calibrate camera intrinsics from captured images."
     )
     p_cal.add_argument("images_glob", help="Glob pattern for images, e.g., 'calibration_imgs/*.jpg'")
+    p_cal.add_argument(
+        "--vision-encoder",
+        action="store_true",
+        help="Experimental: use Bambu Lab Vision Encoder board (requires ve_7x7_dict.npz in project directory)."
+    )
 
     # --- skew ---
     p_skew = subparsers.add_parser(
@@ -869,6 +939,11 @@ def main():
     p_skew.add_argument("--z", type=float, default=40.0, help="Z height for skew capture (mm).")
     p_skew.add_argument("--margin", type=float, default=10.0, help="Bed safety margin (mm).")
     p_skew.add_argument("--moonraker-url", default=default_moonraker, help="Moonraker base URL.")
+    p_skew.add_argument(
+        "--vision-encoder",
+        action="store_true",
+        help="Experimental: use Bambu Lab Vision Encoder board (requires ve_7x7_dict.npz in project directory)."
+    )
 
     args = parser.parse_args()
 
