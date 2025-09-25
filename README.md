@@ -4,7 +4,7 @@ Camera-based XY skew calibration for Klipper using a toolhead-mounted camera and
 
 ## ▶️ Video walkthrough
 
-Please watch this Video where I explain the project: 
+Please watch this Video where I explain the project:
 
 [![YouTube Video](https://img.youtube.com/vi/WQilddTZJRA/0.jpg)](https://youtu.be/WQilddTZJRA)
 
@@ -46,7 +46,9 @@ pip install -r requirements.txt
 
 ## 🚀 Quick start
 
-1) Print the ChArUco board (recommended)
+!["ChArUcoBoard"](./res/board.jpg)
+
+### 1) Print the ChArUco board (recommended)
 
 - Open and print either `charuco_A4_5mm.pdf` or `charuco_Letter_5mm.pdf` depending on your paper size.
 - Print at 100% scale (Actual Size). Do not use "Fit to page". Tape the sheet flat and square to the bed.
@@ -73,7 +75,7 @@ skew_correction.py calibrate-camera "camera_calibration_imgs/*.jpg" --vision-enc
 skew_correction.py skew --z 40 --vision-encoder
 ```
 
-2) Capture images for camera intrinsics (one-time setup)
+### 2) Capture images for camera intrinsics (one-time setup)
 
 This moves the toolhead through a guided pattern to capture multiple views and saves images to `camera_calibration_imgs/`. Do this once per camera setup, and only repeat if you change focus, resolution, lens, or the camera mount. Adjust `--camera-id` if your camera URL or index differs.
 
@@ -82,7 +84,7 @@ skew_correction.py capture-calibration-images \
   --camera-id http://klipper.local/webcam/?action=snapshot
 ```
 
-3) Calibrate intrinsics and save K.npy / dist.npy (one-time setup)
+### 3) Calibrate intrinsics and save K.npy / dist.npy (one-time setup)
 
 This reads the captured images, detects ChArUco corners, and computes camera intrinsics. It writes `K.npy` and `dist.npy` for reuse. You typically do this once; future `skew` runs will reuse these files.
 
@@ -90,7 +92,7 @@ This reads the captured images, detects ChArUco corners, and computes camera int
 skew_correction.py calibrate-camera "camera_calibration_imgs/*.jpg"
 ```
 
-4) Run skew calibration and print the Klipper command (repeat as needed)
+### 4) Run skew calibration and print the Klipper command (repeat as needed)
 
 This captures poses over the bed, estimates camera–nozzle offset and XY skew, and prints a ready-to-use Klipper command like `SET_SKEW XY=...`. Run this whenever you want to re-check or update skew; it reuses `K.npy` and `dist.npy`.
 
@@ -134,7 +136,7 @@ Running on the printer (localhost):
 - If you run this directly on the printer host, set the URL(s) to localhost, e.g.:
   `export PRINTER_URL=http://localhost`
   or
-  - `--moonraker-url http://localhost:7125` and 
+  - `--moonraker-url http://localhost:7125` and
   - `--camera-id http://localhost/webcam/?action=snapshot` (adjust path to your setup)
 
 ## ✅ Tips for best results
@@ -154,7 +156,7 @@ Running on the printer (localhost):
 If you find this project useful please support me so that I can spend more time on this project:
 
   [!["Github Sponsor"](./res/github_sponsor.png)](https://github.com/sponsors/undingen)
-  [![Patreon](./res//patreon.png)](https://www.patreon.com/bePatron?u=10741923)
+  [![Patreon](./res/patreon.png)](https://www.patreon.com/bePatron?u=10741923)
   [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/hiernichterfunden)
 
 
