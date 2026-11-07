@@ -406,7 +406,7 @@ class IntrinsicsCalibrator:
         if not paths:
             raise FileNotFoundError(f"No images match '{images_glob}'")
 
-        all_corners, all_ids, imsize = self._process_images(paths)
+        all_object_points, all_image_points, imsize, _, all_ids = self._process_images(paths)
 
         if len(all_ids) < 12:
             raise RuntimeError(
@@ -415,19 +415,17 @@ class IntrinsicsCalibrator:
             )
 
         print("\n[info] Calibrating camera intrinsics from collected corners...")
-        rms, K, dist, _, _ = cv.aruco.calibrateCameraCharuco(
-            all_corners, all_ids, self.board, imsize, None, None, flags=0
-        )
+        rms, camera_mat, distortion, _, _ = cv.calibrateCamera(all_object_points, all_image_points, imsize, None, None)
 
-        np.save("K.npy", K)
-        np.save("dist.npy", dist)
+        np.save("K.npy", camera_mat)
+        np.save("dist.npy", distortion)
 
-        self._print_calibration_summary(rms, K, imsize)
+        self._print_calibration_summary(rms, camera_mat, imsize)
         print("\n[ok] Saved camera intrinsics to K.npy and dist.npy")
 
     def _process_images(self, paths: List[str]) -> Tuple[List, List, Tuple[int, int]]:
         """Detects ChArUco corners in a list of image files."""
-        all_corners, all_ids = [], []
+        all_corners, all_ids, all_object_points, all_image_points = [], [], [], []
         imsize = None
 
         for idx, p in enumerate(paths, 1):
@@ -448,11 +446,22 @@ class IntrinsicsCalibrator:
                 print(f"  [skip] Found {n_corners} corners (less than required {REQUIRED_CORNERS*2}).")
                 continue
 
+            object_points, image_points = self.board.matchImagePoints(ch_corners, ch_ids)
+
+            n_object_points = 0 if object_points is None else len(object_points)
+            n_image_points = 0 if image_points is None else len(image_points)
+
+            if n_object_points == 0 or n_image_points == 0:
+                print(f"  [skip] Point matching failed.")
+                continue
+
             all_corners.append(ch_corners)
             all_ids.append(ch_ids)
+            all_object_points.append(object_points)
+            all_image_points.append(image_points)
             print(f"  [keep] Found {n_corners} corners.")
 
-        return all_corners, all_ids, imsize
+        return all_object_points, all_image_points, imsize, all_corners, all_ids
 
     def _print_calibration_summary(self, rms: float, K: np.ndarray, imsize: Tuple[int, int]) -> None:
         """Displays a human-friendly summary of the calibration results."""
@@ -637,28 +646,43 @@ class SkewCalibrator:
             ok, rvec, tvec = cv.aruco.estimatePoseCharucoBoard(
                 ch_corners, ch_ids, self.charuco_board.board, K, dist, None, None
             )
+
+            if not ok:
+                return None
+    
+            # Calculate reprojection error
+            obj_pts = self.charuco_board.board.getChessboardCorners()[ch_ids.flatten()]
+            img_proj, _ = cv.projectPoints(obj_pts, rvec, tvec, K, dist)
+            err = np.linalg.norm(ch_corners - img_proj, axis=2)
+            rms = float(np.sqrt(np.mean(err**2)))
         else:
             # newer OpenCV versions deprecate estimatePoseCharucoBoard
-            corner_ids = ch_ids.flatten()
-            obj_pts_all = self.charuco_board.board.getChessboardCorners()
-            obj_pts = obj_pts_all[corner_ids]
-            img_pts = ch_corners.reshape(-1, 2)
+            object_points, image_points = self.charuco_board.board.matchImagePoints(ch_corners, ch_ids)
+            
+            n_object_points = 0 if object_points is None else len(object_points)
+            n_image_points = 0 if image_points is None else len(image_points)
 
-            if len(obj_pts) < 4:
+            if n_object_points == 0 or n_image_points == 0:
+                print(f"  [skip] Point matching failed.")
                 return None
 
-            obj_pts = np.ascontiguousarray(obj_pts, dtype=np.float32)
-            img_pts = np.ascontiguousarray(img_pts, dtype=np.float32)
+            if n_object_points < 4:
+                print(f"  [skip] Less than 4 object points.")
+                return None
 
-            ok, rvec, tvec = cv.solvePnP(obj_pts, img_pts, K, dist, flags=cv.SOLVEPNP_ITERATIVE)
-        if not ok:
-            return None
+            ok, rvec, tvec = cv.solvePnP(object_points, image_points, K, dist, flags=cv.SOLVEPNP_ITERATIVE)
+            
+            if not ok:
+                return None
+    
+            # Calculate reprojection error
+            img_proj, _ = cv.projectPoints(object_points, rvec, tvec, K, dist)
+            err = []
+            for a, b in zip(img_proj, image_points):
+                c = a[0]
+                err.append(np.sqrt((c[0]-b[0])**2 + (c[1]-b[1])**2))
+            rms = np.mean(err)
 
-        # Calculate reprojection error
-        obj_pts = self.charuco_board.board.getChessboardCorners()[ch_ids.flatten()]
-        img_proj, _ = cv.projectPoints(obj_pts, rvec, tvec, K, dist)
-        err = np.linalg.norm(ch_corners - img_proj, axis=2)
-        rms = float(np.sqrt(np.mean(err**2)))
         R, _ = cv.Rodrigues(rvec)
 
         # Initialize p_cmd to a placeholder; it will be set correctly in the calling function.
